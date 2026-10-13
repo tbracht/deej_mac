@@ -24,6 +24,7 @@ final class DeejController: ObservableObject {
     private var tapDevice: AudioDeviceID?
     private let serial: SerialReader
     private var refreshTimer: Timer?
+    private let overlay = Overlay()
 
     /// Ignore jitter of the potentiometers / ADC (deej's "noise reduction").
     private let noiseThreshold: Float = 0.01
@@ -76,7 +77,15 @@ final class DeejController: ObservableObject {
             || (incoming[i] != values[i] && (incoming[i] == 0 || incoming[i] == 1)) {
             values[i] = incoming[i]
             apply(i)
+            showOverlay(for: i)
         }
+    }
+
+    private func showOverlay(for slider: Int) {
+        guard config.showOverlay else { return }
+        let targets = config.targets(for: slider)
+        let title = targets.isEmpty ? "Slider \(slider + 1)" : targets.map(\.displayName).joined(separator: ", ")
+        overlay.show(title: title, icon: targets.count == 1 ? targets[0].icon(level: values[slider]) : nil, value: values[slider])
     }
 
     private func apply(_ slider: Int) {

@@ -32,6 +32,8 @@ struct Config: Codable {
     var port: String?
     var baudRate = 9600
     var invertSliders = false
+    /// Briefly show a HUD below the menu bar when a slider moves.
+    var showOverlay = true
     /// Slider index → targets, e.g. [["master"], ["com.spotify.client"], ["com.google.Chrome", "com.hnc.Discord"]]
     var sliders: [[String]] = [["master"]]
 
@@ -42,6 +44,7 @@ struct Config: Codable {
         port = try c.decodeIfPresent(String.self, forKey: .port)
         baudRate = try c.decodeIfPresent(Int.self, forKey: .baudRate) ?? baudRate
         invertSliders = try c.decodeIfPresent(Bool.self, forKey: .invertSliders) ?? invertSliders
+        showOverlay = try c.decodeIfPresent(Bool.self, forKey: .showOverlay) ?? showOverlay
         sliders = try c.decodeIfPresent([[String]].self, forKey: .sliders) ?? sliders
     }
 

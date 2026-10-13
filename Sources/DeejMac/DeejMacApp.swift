@@ -44,6 +44,7 @@ struct ContentView: View {
 
             Divider()
             Toggle("Invert sliders", isOn: $controller.config.invertSliders)
+            Toggle("Show overlay when a slider moves", isOn: $controller.config.showOverlay)
             HStack {
                 Button("Open config file") { NSWorkspace.shared.open(Config.url) }
                 Spacer()
@@ -68,7 +69,7 @@ struct SliderRow: View {
                 Text("\(slider + 1)").font(.headline.monospacedDigit()).frame(width: 16)
                 ProgressView(value: Double(value)).frame(width: 110)
                 Text("\(Int((value * 100).rounded()))%").monospacedDigit().frame(width: 40, alignment: .trailing)
-                Menu(targets.isEmpty ? "Unassigned" : targets.map(Self.name).joined(separator: ", ")) {
+                Menu(targets.isEmpty ? "Unassigned" : targets.map(\.displayName).joined(separator: ", ")) {
                     item(.master)
                     item(.mic)
                     item(.unmapped)
@@ -88,9 +89,9 @@ struct SliderRow: View {
             controller.toggle(target, slider: slider)
         } label: {
             if targets.contains(target) {
-                Label(Self.name(target), systemImage: "checkmark")
+                Label(target.displayName, systemImage: "checkmark")
             } else {
-                Text(Self.name(target))
+                Text(target.displayName)
             }
         }
     }
@@ -104,19 +105,6 @@ struct SliderRow: View {
             .compactMap { if case .app(let id) = $0 { id } else { nil } }
         return Set(running + configured)
             .filter { $0 != Bundle.main.bundleIdentifier }
-            .sorted { Self.name(.app($0)).localizedCaseInsensitiveCompare(Self.name(.app($1))) == .orderedAscending }
-    }
-
-    static func name(_ target: Target) -> String {
-        switch target {
-        case .master: return "Master volume"
-        case .mic: return "Microphone"
-        case .unmapped: return "Everything else"
-        case .app(let id):
-            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) {
-                return FileManager.default.displayName(atPath: url.path).replacingOccurrences(of: ".app", with: "")
-            }
-            return id
-        }
+            .sorted { Target.app($0).displayName.localizedCaseInsensitiveCompare(Target.app($1).displayName) == .orderedAscending }
     }
 }
