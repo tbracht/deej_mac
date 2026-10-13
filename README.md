@@ -1,6 +1,6 @@
 # DeejMac
 
-A macOS menu bar app for a [deej](https://github.com/omriharel/deej) slider box (Arduino sending `v1|v2|...|vN\r\n`, values 0–1023, 9600 baud).
+A macOS menu bar app for a [deej](https://github.com/omriharel/deej) slider/potentiometer box (Arduino sending `v1|v2|...|vN\r\n`, values 0–1023, 9600 baud).
 
 ## Build & run
 
