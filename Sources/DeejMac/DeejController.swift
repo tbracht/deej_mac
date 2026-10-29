@@ -9,11 +9,17 @@ final class DeejController: ObservableObject {
     /// Last positions read from the board (already inverted if configured). Empty while no board is connected.
     /// Changes are detected against these, so a value set by hand stays until the physical slider moves.
     @Published private(set) var hardwareValues: [Float] = []
-    @Published private(set) var port: String?
+    @Published private(set) var serialStatus: SerialReader.Status = .searching
+    @Published private(set) var availablePorts: [SerialPortInfo] = []
+    /// Releases the serial port, e.g. while flashing another board. Not persisted.
+    @Published var serialPaused = false {
+        didSet { configureSerial() }
+    }
     @Published private(set) var tapErrors: [Int: String] = [:]
     @Published var config: Config {
         didSet {
             config.save()
+            configureSerial()
             if config.invertSliders != oldValue.invertSliders {
                 hardwareValues = hardwareValues.map { 1 - $0 }
                 values.replaceSubrange(0..<hardwareValues.count, with: hardwareValues)
@@ -22,6 +28,10 @@ final class DeejController: ObservableObject {
             refreshTaps()
             values.indices.forEach(apply)
         }
+    }
+
+    var port: String? {
+        if case .connected(let path) = serialStatus { path } else { nil }
     }
 
     var sliderCount: Int { max(values.count, config.sliders.count) }
@@ -43,17 +53,29 @@ final class DeejController: ObservableObject {
         let config = Config.load()
         self.config = config
         config.save() // writes the defaults on first launch so the file can be edited
-        serial = SerialReader(port: config.port, baudRate: config.baudRate)
+        serial = SerialReader(baudRate: config.baudRate)
+        configureSerial()
 
         serial.onValues = { [weak self] raw in
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.receive(raw) } }
         }
-        serial.onConnectionChange = { [weak self] port in
+        serial.onStatus = { [weak self] status in
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
-                    self?.port = port
+                    self?.serialStatus = status
                     // The next board to connect is taken as the new truth for all its sliders.
-                    if port == nil { self?.hardwareValues = [] }
+                    if case .connected = status {} else { self?.hardwareValues = [] }
+                }
+            }
+        }
+        serial.onPortsChanged = { [weak self] ports in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.availablePorts = ports } }
+        }
+        serial.onBoardFound = { [weak self] path in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self, self.config.knownBoard != path else { return }
+                    self.config.knownBoard = path
                 }
             }
         }
@@ -68,6 +90,10 @@ final class DeejController: ObservableObject {
             MainActor.assumeIsolated { self?.refreshTaps() }
         }
         padValues(to: config.sliders.count)
+    }
+
+    private func configureSerial() {
+        serial.configure(pinnedPort: config.port, paused: serialPaused, knownBoard: config.knownBoard)
     }
 
     func shutdown() {

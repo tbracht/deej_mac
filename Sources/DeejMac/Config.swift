@@ -28,8 +28,10 @@ enum Target: Hashable {
 }
 
 struct Config: Codable {
-    /// nil = auto-detect the first USB serial port.
+    /// Pinned serial port, e.g. "/dev/cu.usbserial-21340". nil = auto-detect the deej board.
     var port: String?
+    /// The port where auto-detection last found the deej board; it is tried first.
+    var knownBoard: String?
     var baudRate = 9600
     var invertSliders = false
     /// Briefly show a HUD below the menu bar when a slider moves.
@@ -42,6 +44,7 @@ struct Config: Codable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         port = try c.decodeIfPresent(String.self, forKey: .port)
+        knownBoard = try c.decodeIfPresent(String.self, forKey: .knownBoard)
         baudRate = try c.decodeIfPresent(Int.self, forKey: .baudRate) ?? baudRate
         invertSliders = try c.decodeIfPresent(Bool.self, forKey: .invertSliders) ?? invertSliders
         showOverlay = try c.decodeIfPresent(Bool.self, forKey: .showOverlay) ?? showOverlay

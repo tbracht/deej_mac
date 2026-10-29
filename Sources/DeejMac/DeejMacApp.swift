@@ -26,11 +26,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 struct ContentView: View {
     @ObservedObject var controller: DeejController
 
+    private var statusText: String {
+        switch controller.serialStatus {
+        case .paused: "Serial paused – port released"
+        case .searching: controller.config.port.map { "Waiting for \(($0 as NSString).lastPathComponent)…" } ?? "Searching for deej board…"
+        case .connected(let path): "Connected: \((path as NSString).lastPathComponent)"
+        }
+    }
+
+    private var statusColor: Color {
+        switch controller.serialStatus {
+        case .paused: .orange
+        case .searching: .red
+        case .connected: .green
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 6) {
-                Circle().fill(controller.port != nil ? Color.green : Color.red).frame(width: 8, height: 8)
-                Text(controller.port.map { "Connected: \($0)" } ?? "Waiting for deej board…")
+                Circle().fill(statusColor).frame(width: 8, height: 8)
+                Text(statusText)
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -51,6 +67,19 @@ struct ContentView: View {
             .font(.callout)
 
             Divider()
+            HStack {
+                Picker("Port", selection: $controller.config.port) {
+                    Text("Auto-detect").tag(String?.none)
+                    ForEach(controller.availablePorts, id: \.path) { port in
+                        Text(port.displayName).tag(Optional(port.path))
+                    }
+                    if let pinned = controller.config.port, !controller.availablePorts.contains(where: { $0.path == pinned }) {
+                        Text("\((pinned as NSString).lastPathComponent) (not connected)").tag(Optional(pinned))
+                    }
+                }
+                Toggle("Pause", isOn: $controller.serialPaused)
+                    .help("Release the serial port, e.g. while flashing or using a REPL on another board")
+            }
             Toggle("Invert sliders", isOn: $controller.config.invertSliders)
             Toggle("Show overlay when a slider moves", isOn: $controller.config.showOverlay)
             HStack {
