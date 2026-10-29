@@ -55,6 +55,10 @@ enum AudioSystem {
         getString(device, kAudioDevicePropertyDeviceUID)
     }
 
+    static func volume(_ device: AudioDeviceID, scope: AudioObjectPropertyScope) -> Float? {
+        get(device, kAudioHardwareServiceDeviceProperty_VirtualMainVolume, scope: scope, initial: Float32(0))
+    }
+
     /// Sets the same volume macOS's own volume slider controls (works for devices with or without a hardware volume).
     @discardableResult
     static func setVolume(_ device: AudioDeviceID, scope: AudioObjectPropertyScope, _ volume: Float) -> Bool {

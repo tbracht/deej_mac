@@ -4,20 +4,30 @@ import Foundation
 
 @MainActor
 final class DeejController: ObservableObject {
-    /// Current slider positions, 0...1 (already inverted if configured).
+    /// Effective slider positions, 0...1: the board's reading or a value set by hand in the menu.
     @Published private(set) var values: [Float] = []
+    /// Last positions read from the board (already inverted if configured). Empty while no board is connected.
+    /// Changes are detected against these, so a value set by hand stays until the physical slider moves.
+    @Published private(set) var hardwareValues: [Float] = []
     @Published private(set) var port: String?
     @Published private(set) var tapErrors: [Int: String] = [:]
     @Published var config: Config {
         didSet {
             config.save()
-            if config.invertSliders != oldValue.invertSliders { values = values.map { 1 - $0 } }
+            if config.invertSliders != oldValue.invertSliders {
+                hardwareValues = hardwareValues.map { 1 - $0 }
+                values.replaceSubrange(0..<hardwareValues.count, with: hardwareValues)
+            }
+            padValues(to: config.sliders.count)
             refreshTaps()
             values.indices.forEach(apply)
         }
     }
 
     var sliderCount: Int { max(values.count, config.sliders.count) }
+    /// Sliders driven by the connected board; any rows beyond these are set by hand only.
+    var boardSliderCount: Int { hardwareValues.count }
+    var canRemoveSlider: Bool { sliderCount > max(1, boardSliderCount) }
 
     private struct ActiveTap { let mode: VolumeTap.Mode; let processes: [AudioObjectID]; let tap: VolumeTap }
     private var taps: [Int: ActiveTap] = [:]
@@ -39,7 +49,13 @@ final class DeejController: ObservableObject {
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.receive(raw) } }
         }
         serial.onConnectionChange = { [weak self] port in
-            DispatchQueue.main.async { MainActor.assumeIsolated { self?.port = port } }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    self?.port = port
+                    // The next board to connect is taken as the new truth for all its sliders.
+                    if port == nil { self?.hardwareValues = [] }
+                }
+            }
         }
         serial.start()
 
@@ -51,6 +67,7 @@ final class DeejController: ObservableObject {
         AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &addr, .main) { [weak self] _, _ in
             MainActor.assumeIsolated { self?.refreshTaps() }
         }
+        padValues(to: config.sliders.count)
     }
 
     func shutdown() {
@@ -67,17 +84,66 @@ final class DeejController: ObservableObject {
         // Snap the ends so a slider pushed all the way really means 0% / 100%.
         incoming = incoming.map { $0 < 0.015 ? 0 : ($0 > 0.985 ? 1 : $0) }
 
-        if incoming.count != values.count {
-            values = incoming
+        if incoming.count != hardwareValues.count {
+            // Board (re)connected: sync every slider to its physical position.
+            hardwareValues = incoming
+            if config.sliders.count < incoming.count {
+                // Remember the board's sliders so they stay adjustable by hand after unplugging it.
+                var updated = config
+                updated.sliders += Array(repeating: [], count: incoming.count - updated.sliders.count)
+                config = updated
+            }
+            padValues(to: incoming.count)
+            values.replaceSubrange(0..<incoming.count, with: incoming)
             refreshTaps()
-            values.indices.forEach(apply)
+            incoming.indices.forEach(apply)
             return
         }
-        for i in incoming.indices where abs(incoming[i] - values[i]) >= noiseThreshold
-            || (incoming[i] != values[i] && (incoming[i] == 0 || incoming[i] == 1)) {
+        for i in incoming.indices where abs(incoming[i] - hardwareValues[i]) >= noiseThreshold
+            || (incoming[i] != hardwareValues[i] && (incoming[i] == 0 || incoming[i] == 1)) {
+            hardwareValues[i] = incoming[i]
             values[i] = incoming[i]
             apply(i)
             showOverlay(for: i)
+        }
+    }
+
+    /// A slider moved by hand in the menu. It stays in effect until the board's slider is physically moved.
+    func setManually(_ slider: Int, _ value: Float) {
+        padValues(to: slider + 1)
+        values[slider] = max(0, min(1, value))
+        apply(slider)
+    }
+
+    /// Adds a slider that is only set by hand (unless a board with that many sliders is connected).
+    func addSlider() {
+        var updated = config
+        updated.sliders += Array(repeating: [], count: sliderCount + 1 - updated.sliders.count)
+        config = updated
+    }
+
+    /// Removes the last slider. Its taps are torn down, so assigned apps return to full volume.
+    func removeLastSlider() {
+        guard canRemoveSlider else { return }
+        let count = sliderCount - 1
+        values.removeSubrange(min(count, values.count)...)
+        var updated = config
+        updated.sliders.removeSubrange(min(count, updated.sliders.count)...)
+        config = updated
+    }
+
+    /// Gives sliders without a board reading a starting value that changes nothing:
+    /// the current system volume for master/mic, 100% for apps.
+    private func padValues(to count: Int) {
+        while values.count < count {
+            let slider = values.count
+            var value: Float?
+            switch config.targets(for: slider).first {
+            case .master: value = AudioSystem.defaultOutputDevice.flatMap { AudioSystem.volume($0, scope: kAudioObjectPropertyScopeOutput) }
+            case .mic: value = AudioSystem.defaultInputDevice.flatMap { AudioSystem.volume($0, scope: kAudioObjectPropertyScopeInput) }
+            default: break
+            }
+            values.append(value ?? 1)
         }
     }
 

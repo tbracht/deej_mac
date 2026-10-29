@@ -41,6 +41,14 @@ struct ContentView: View {
             ForEach(0..<controller.sliderCount, id: \.self) { slider in
                 SliderRow(controller: controller, slider: slider)
             }
+            HStack {
+                Button { controller.addSlider() } label: { Label("Add slider", systemImage: "plus") }
+                if controller.canRemoveSlider {
+                    Button { controller.removeLastSlider() } label: { Label("Remove last", systemImage: "minus") }
+                }
+            }
+            .buttonStyle(.borderless)
+            .font(.callout)
 
             Divider()
             Toggle("Invert sliders", isOn: $controller.config.invertSliders)
@@ -67,7 +75,18 @@ struct SliderRow: View {
         VStack(alignment: .leading, spacing: 2) {
             HStack {
                 Text("\(slider + 1)").font(.headline.monospacedDigit()).frame(width: 16)
-                ProgressView(value: Double(value)).frame(width: 110)
+                    .overlay(alignment: .topTrailing) {
+                        if controller.port != nil && slider >= controller.boardSliderCount {
+                            Image(systemName: "hand.point.up.left.fill")
+                                .font(.system(size: 8))
+                                .foregroundStyle(.secondary)
+                                .offset(x: 6, y: -4)
+                                .help("Not on the board – set by hand only")
+                        }
+                    }
+                Slider(value: Binding(get: { Double(value) }, set: { controller.setManually(slider, Float($0)) }))
+                    .controlSize(.small)
+                    .frame(width: 110)
                 Text("\(Int((value * 100).rounded()))%").monospacedDigit().frame(width: 40, alignment: .trailing)
                 Menu(targets.isEmpty ? "Unassigned" : targets.map(\.displayName).joined(separator: ", ")) {
                     item(.master)
